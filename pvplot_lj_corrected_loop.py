@@ -14,15 +14,13 @@ from espressomd import thermostat
 
 N_part = 150
 volume  = float(sys.argv[1]) #300. # nm3
-box_l = volume**(1./3.) 
+box_l = volume**(1./3.) #/sigma_nm
 system = espressomd.System(box_l=[box_l]*3)
 Density = (N_part / volume)
 #intaraction parameters (non bounded intaractions, repulsive lennard jones)
 
-temperature = 140     #float(sys.argv[2]) #250  #in kelvin
-#lj_eps = 0.3753020134228188
+temperature = 250  #float(sys.argv[2])  #in kelvin
 lj_eps = 119.8/temperature
-#lj_eps = 0.3993
 lj_sig = 0.314   #in pystar for argon (from Sasha) eps/k_B(in K) = 111.84 and sig(in nm) = 0.3623  # (from book)sig(in nm) = 0.314, eps/k = 119.8K 
 lj_cut = 2.5 * lj_sig
 lj_cap = 20       #By artificially capping the forces, it is possible to simulate a system with overlaps.
@@ -39,7 +37,7 @@ system.integrator.set_vv()
 system.thermostat.set_langevin(kT = temperature/300, gamma=gamma, seed=42)   #300K is room temperature. using this here for considering given temperature values which is 250K
 
 # warmup integration (with capped LJ potential)
-warm_steps = 100
+warm_steps = 1000
 warm_n_times = 50
 # do the warmup until the particles have at least the distance min_dist
 min_dist = 0.9*lj_sig
@@ -47,7 +45,7 @@ min_dist = 0.9*lj_sig
 #integration setup
 
 int_steps = 10000
-int_n_times = 1000
+int_n_times = 100
 
 system.non_bonded_inter[0,0].lennard_jones.set_params(
         epsilon=lj_eps, sigma=lj_sig,
@@ -61,7 +59,6 @@ print(system.non_bonded_inter[0, 0].lennard_jones.get_params())
 for i in range(N_part):
     system.part.add(id=i, pos=np.random.random(3) * system.box_l)
 
-#system.analysis.dist_to(0)
 
 print("Simulate {} particles in a cubic simulation box of length {} at density {}."
       .format(N_part, box_l, Density).strip())
@@ -69,12 +66,10 @@ print("Interactions:\n")
 act_min_dist = system.analysis.min_dist()
 print("Start with minimal distance {}".format(act_min_dist))
 
-#system.cell_system.max_num_cells = 2744
-
 #open Observable file
-obs_file = open("pvplotunit.obs", "w")
+obs_file = open("pvplot_lj.obs", "w")
 obs_file.write("# Time\tE_tot\tE_kin\tE_pot\tP_tot\n")
-obs_file1 = open("pvplotunit_avg.obs", "w")
+obs_file1 = open("pvplot_lj_avg.obs", "w")
 obs_file1.write("# Time\tp_avg\tp_std\te_avg\te_std\n")
 print("""
 Start warmup integration:
@@ -90,15 +85,14 @@ while (i < warm_n_times and act_min_dist < min_dist):
     act_min_dist = system.analysis.min_dist()
     i += 1   
 #open set file
-set_file = open("pvplotunit.set", "w")
+set_file = open("pvplot_lj.set", "w")
 set_file.write("box_l %s\ntime_step %s\nskin %s\n" %
                (box_l, system.time_step, system.cell_system.skin))
 
 #Integration
 p_samples = []
-unit_length = 1e-9 #now it is from nm to m.
 kT = 1.38e-23 * temperature   #now in jolues
-to_bars = kT / (1e5 * unit_length ** 3) #pas to bar 1e5
+to_bars = kT / (1e5 * 1e-27 ) #pas to bar 1e5
 
 times, p_tots, e_tots, e_kins, e_pots, = [], [], [], [], [], 
 
@@ -111,7 +105,8 @@ for i in range(int_n_times):
     e_kin = energy['kinetic']
     e_pot = energy['non_bonded']
     p_tot = system.analysis.pressure()['total']
-    #print ( e_tot )
+   # obs_file.write("%f %f %f %f %f\n" % (time, e_tot , e_kin , e_pot , p_tot * to_bars,))
+    
 
     if e_tot > 300: good = False
     if p_tot > 200: good = False
@@ -122,22 +117,18 @@ for i in range(int_n_times):
         e_tots.append(e_tot)
         e_kins.append(e_kin)
         e_pots.append(e_pot)
-    #vtf.writevcf(system, fp)
 
 p_avg = np.mean(p_tots)
 e_avg = np.mean(e_tots)
-    # Standard deviation of pressure
 p_std = np.std(p_tots)
 e_std = np.std(e_tots)
 obs_file1.write("%f %f %f %f\n" % (p_avg , p_std , e_avg , e_std))
 
-xyz_file = open("pvplotunit.xyz", "w")
+xyz_file = open("pvplot_lj.xyz", "w")
 xyz_file.write("{ time %f } \n { box_l %f }\n" % (system.time, box_l))
 xyz_file.write("{ particles {id pos type} }\n")
 for i in range(N_part):
-#    print("i:", i)
     current_position_array = system.part[i].pos
-#    print("Current position is:", current_position_array)
     good_coords = []
     for coord in current_position_array:
         while(coord < 0 or coord > box_l):

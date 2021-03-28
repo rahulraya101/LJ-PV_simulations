@@ -1,0 +1,15 @@
+#!/bin/bash
+
+Volumes="15. 25. 30. 60. 100. 200. 300."
+
+for Vi in $Volumes; do
+	wdir="w1k_int10k_140K_simulation_"$Vi
+	mkdir $wdir
+	cd $wdir
+
+	../pypresso ../pvplot_lj_3.py $Vi
+	
+	cd ../
+done
+
+exit 
